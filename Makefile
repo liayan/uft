@@ -6,6 +6,7 @@ INSTALL_DIR ?= "${HOME}/bin/"
 LIBS=
 STATIC_LIBGIT2=build/libgit2.a
 LIBGIT2=-lgit2
+LIBCURL=-lcurl
 
 ifeq ($(BUILD_LIBGIT2), 1)
   LIBGIT2=$(STATIC_LIBGIT2)
@@ -20,7 +21,7 @@ endif
 all: $(TARGET_UFT)
 
 $(TARGET_UFT): $(OBJ_UFT) $(DEPS)
-	g++ -o $@ $+ $(LIBGIT2) $(LIBS)
+	g++ -o $@ $+ $(LIBGIT2) $(LIBS) $(LIBCURL)
 
 %.o: %.cc $(LIBGIT2) $(DEPS)
 	g++ -c $(CXXFLAGS) $<

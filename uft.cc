@@ -394,6 +394,63 @@ static int handle_commit(git_commit *commit, git_repository *repo,
 	return error;
 }
 
+size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp){
+    char *d = (char*)buffer;
+    string *b = (string*)(userp);
+    int result = 0;
+    if (b != NULL){
+        b->append(d, size*nmemb);
+        result = size*nmemb;
+    }
+    return result;
+}
+
+int send_to_slack(){
+
+    	CURL *curl;
+    	CURLcode res;
+    	curl = curl_easy_init();
+
+    	string result;
+    	struct curl_slist *headers = NULL;
+	headers = curl_slist_append(headers, CONTENT_TYPE);
+    	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
+    	curl_easy_setopt(curl, CURLOPT_URL, INCOMING_WEBHOOKS);
+
+
+	string strJson = "{\"text\":\"Hello world \n World Hello\"}";
+    	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strJson.size());
+    	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, strJson.c_str());
+
+
+
+
+
+    	res = curl_easy_perform(curl);
+	if (res != CURLE_OK)
+	{
+		switch(res)
+		{
+			case CURLE_UNSUPPORTED_PROTOCOL:
+				fprintf(stderr,"unsupported protocol\n");
+			case CURLE_COULDNT_CONNECT:
+				fprintf(stderr,"could not connect to remote host\n");
+			case CURLE_HTTP_RETURNED_ERROR:
+				fprintf(stderr,"http return error\n");
+			case CURLE_READ_ERROR:
+				fprintf(stderr,"curl read error\n");
+			default:
+				fprintf(stderr,"return:%d\n",res);
+		}
+		return -1;
+	}
+
+	curl_slist_free_all(headers);
+    	curl_easy_cleanup(curl);	
+	return 0;
+}
+
 static void print_results(struct options *opts)
 {
 	map<string, vector<commit> >::iterator r;
@@ -401,6 +458,22 @@ static void print_results(struct options *opts)
 	const char *prefix;
 	bool found = false;
 
+
+	//CURL operation
+    	CURL *curl;
+    	CURLcode res;
+    	curl = curl_easy_init();
+
+    	string result;
+    	struct curl_slist *headers = NULL;
+	headers = curl_slist_append(headers, CONTENT_TYPE);
+    	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
+    	curl_easy_setopt(curl, CURLOPT_URL, INCOMING_WEBHOOKS);
+
+	string strJson = "{\"text\":\"";
+	strJson += "============================================\n";
+	strJson += "Git fixes between " + opts->base + " and HEAD \n";
 	prefix = opts->no_group ? "" : "\t";
 
 	for (r = results.begin(); r != results.end(); ++r) {
@@ -422,6 +495,24 @@ static void print_results(struct options *opts)
 				printf("%s%s %s\n", prefix,
 						i->id.substr(0,12).c_str(),
 						i->subject.c_str());
+
+				string subject;
+				for(char c : i->subject){
+					switch (c)
+					{
+            					case '\\': subject += "\\\\"; break;
+            					case '"':  subject += "\\\""; break;
+            					case '/':  subject += "\\/"; break;
+            					case '\b': subject += "\\b"; break;
+            					case '\f': subject += "\\f"; break;
+            					case '\n': subject += "\\n"; break;
+            					case '\r': subject += "\\r"; break;
+            					case '\t': subject += "\\t"; break;
+            					default: subject += c; break;						
+					}	
+				}
+				strJson += i->id.substr(0,12) + " " + subject + "\n";
+
 				if (opts->patch && i->path != "")
 					printf("%s  (Fixes %s)\n", prefix, i->path.c_str());
 			}
@@ -429,10 +520,40 @@ static void print_results(struct options *opts)
 				printf("\n");
 		}
 	}
+	
+	strJson += "============================================\n";
+	strJson += "\"}";
+
+	//printf("%s", strJson.c_str());
+    	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strJson.size());
+    	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, strJson.c_str());
+    	res = curl_easy_perform(curl);
+	if (res != CURLE_OK)
+	{
+		switch(res)
+		{
+			case CURLE_UNSUPPORTED_PROTOCOL:
+				fprintf(stderr,"unsupported protocol\n");
+			case CURLE_COULDNT_CONNECT:
+				fprintf(stderr,"could not connect to remote host\n");
+			case CURLE_HTTP_RETURNED_ERROR:
+				fprintf(stderr,"http return error\n");
+			case CURLE_READ_ERROR:
+				fprintf(stderr,"curl read error\n");
+			default:
+				fprintf(stderr,"return:%d\n",res);
+		}
+		return;
+	}
+
+	curl_slist_free_all(headers);
+    	curl_easy_cleanup(curl);	
 
 	if (!found)
 		printf("Nothing found\n");
 }
+
+
 
 static int revwalk_init(git_revwalk **walker, git_repository *repo,
 			const char *revision)
@@ -819,6 +940,7 @@ static int match_commit_search(git_repository *repo, struct options *opts)
 	remove_reverts(reverts);
 
 	destroy_diffopts(&diffopts);
+
 	if (bl_pathspec)
 		git_pathspec_free(bl_pathspec);
 	git_revwalk_free(walker);

@@ -24,6 +24,11 @@
 #include <string.h>
 #include <stdio.h>
 #include <git2.h>
+#include <curl/curl.h>
+
+
+
+#define CONTENT_TYPE "Content-type: application/json"
 
 #if LIBGIT2_VER_MAJOR == 0 && LIBGIT2_VER_MINOR < 22
 #error "libgit2 version 0.22.0 or newer is required. Try 'make BUILD_LIBGIT2=1'"
