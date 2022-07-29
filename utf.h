@@ -54,6 +54,8 @@ struct options {
 	bool no_blacklist;
 	bool parsable;
 	bool patch;
+	int count;
+	int match;
 	vector<string> path;
 	vector<string> bl_path;
 };
@@ -134,14 +136,14 @@ static struct option options[] = {
 	{ "no-blacklist",	no_argument,		0, OPTION_NO_BLACKLIST   },
 	{ "base",		no_argument,		0, OPTION_BASE          },
 	{ "parsable",		no_argument,		0, OPTION_PARSABLE       },
-	{ "bl-file",	        required_argument,	0, OPTION_BL_FILE },
+	{ "only-file",	        required_argument,	0, OPTION_BL_FILE },
 	{ "patch",		no_argument,		0, OPTION_PATCH          },
 	{ 0,			0,			0, 0                     }
 };
 
 static void usage(const char *prg)
 {
-	printf("Usage: %s [Options] \n", prg);
+	printf("Usage: %s [Options] [Revspec [Path...]]\n", prg);
 	printf("Options:\n");
 	printf("  --help, -h       Print this message end exit\n");
 	printf("  --base, -b       Set the base branch or tag id\n");
@@ -153,13 +155,12 @@ static void usage(const char *prg)
 	printf("  --no-grouping    Don't group fixes by committer\n");
 	printf("  --match-all, -m  Match against everything that looks like a git commit-id\n");
 	printf("  --data-base, -d  Select specific data-base (set file with fixes.<db>.file)\n");
-	printf("  --extra, -e      Read commit-list from file\n");
 	printf("  --bl-keyword -k  Specify a file with keywords to blacklist the\n");
 	printf("                   commit-list we do not care\n");
 	printf("                   Use this to filter fixes that contain the keyword\n");
 	printf("  --blacklist,     Read blacklist from file\n");
 	printf("  --no-blacklist,  Also show blacklisted commits\n");
 	printf("  --parsable, -p   Print machine readable output\n");
-	printf("  --bl-file        Filename containing the src file names that want to blaclist \n");
+	printf("  --only-file      Filename containing the src file names that want to search fixes \n");
 	printf("  --patch          Print patch-filename the fix is for (if available)\n");
 }

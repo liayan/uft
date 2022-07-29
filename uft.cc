@@ -80,20 +80,6 @@ static int split_trim(vector<string> &items, const char *delim,
 	return num;
 }
 
-string fix_revision(string base, string rev)
-{
-	if (rev.length() < 2)
-		return base + "..HEAD";
-
-	if (rev.substr(0,2) == "..")
-		rev = base + rev;
-
-	if (rev.substr(rev.length() - 2, 2) == "..")
-		rev = rev + "HEAD";
-
-	return rev;
-}
-
 static bool is_blacklisted(const string &commit_id)
 {
 	vector<string>::const_iterator it;
@@ -229,7 +215,7 @@ static bool match_commit(const struct commit &c, const string &id,
 	struct match_info info;
 	bool ret;
 
-	/* First check if the commit is already in the tree */
+	/* First check if the commit is already included */
 	info.commit_id = to_lower(c.id);
 	it = lower_bound(match_list.begin(), match_list.end(), info);
 	if (it != match_list.end() && it->commit_id == info.commit_id)
@@ -238,7 +224,6 @@ static bool match_commit(const struct commit &c, const string &id,
 	info.commit_id = to_lower(id);
 
 	it = lower_bound(match_list.begin(), match_list.end(), info);
-
 	if (it == match_list.end() || it->commit_id != info.commit_id)
 		return false;
 
@@ -281,9 +266,9 @@ static void parse_line(const string &line, struct commit &cm)
 	struct reference commit;
 	int last_c = -1;
 
-	if (line.length() >= 4 && to_lower(line.substr(0,4)) == "CVE-")
-		commit.cve = true;
-		
+	if (line.length() >= 4 && line.find("CVE-") != string::npos)
+		commit.fixes = true;
+	
 	if (line.length() >= 6 && to_lower(line.substr(0,6)) == "fixes:")
 		commit.fixes = true;
 
@@ -405,27 +390,23 @@ size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp){
     return result;
 }
 
-int send_to_slack(){
-
+static int send_to_slack(string &strJson){
+	
+	//CURL operation
     	CURL *curl;
     	CURLcode res;
     	curl = curl_easy_init();
 
-    	string result;
+    	//string result;
     	struct curl_slist *headers = NULL;
 	headers = curl_slist_append(headers, CONTENT_TYPE);
     	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 4000);
     	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
     	curl_easy_setopt(curl, CURLOPT_URL, INCOMING_WEBHOOKS);
-
-
-	string strJson = "{\"text\":\"Hello world \n World Hello\"}";
+  
     	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strJson.size());
     	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, strJson.c_str());
-
-
-
-
 
     	res = curl_easy_perform(curl);
 	if (res != CURLE_OK)
@@ -447,8 +428,27 @@ int send_to_slack(){
 	}
 
 	curl_slist_free_all(headers);
-    	curl_easy_cleanup(curl);	
+    	curl_easy_cleanup(curl);
+
 	return 0;
+}
+
+void string_to_json(const string &orig_line, string &line){
+	for(char c : orig_line){
+		switch (c)
+		{
+            		case '\\': line += "\\\\"; break;
+            		case '"':  line += "\\\""; break;
+            		case '/':  line += "\\/"; break;
+            		case '\b': line += "\\b"; break;
+            		case '\f': line += "\\f"; break;
+            		case '\n': line += "\\n"; break;
+            		case '\r': line += "\\r"; break;
+            		case '\t': line += "\\t"; break;
+            		default: line += c; break;						
+		}	
+	}
+	return;	
 }
 
 static void print_results(struct options *opts)
@@ -458,30 +458,16 @@ static void print_results(struct options *opts)
 	const char *prefix;
 	bool found = false;
 
-
-	//CURL operation
-    	CURL *curl;
-    	CURLcode res;
-    	curl = curl_easy_init();
-
-    	string result;
-    	struct curl_slist *headers = NULL;
-	headers = curl_slist_append(headers, CONTENT_TYPE);
-    	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
-    	curl_easy_setopt(curl, CURLOPT_URL, INCOMING_WEBHOOKS);
-
 	string strJson = "{\"text\":\"";
-	strJson += "============================================\n";
-	strJson += "Git fixes between " + opts->base + " and HEAD \n";
-	prefix = opts->no_group ? "" : "\t";
+	strJson += "=================================================\n";
+	strJson += "Git commits between " + opts->base + " and " + opts->revision +"\n";
 
+	prefix = opts->no_group ? "" : "\t";
 	for (r = results.begin(); r != results.end(); ++r) {
 		if (!r->second.size())
 			continue;
 
 		found = true;
-
 		if (opts->parsable) {
 			for (i = r->second.begin(); i != r->second.end(); ++i) {
 				printf("%s;%s;%s;%s\n", i->context.c_str(),
@@ -496,22 +482,13 @@ static void print_results(struct options *opts)
 						i->id.substr(0,12).c_str(),
 						i->subject.c_str());
 
-				string subject;
-				for(char c : i->subject){
-					switch (c)
-					{
-            					case '\\': subject += "\\\\"; break;
-            					case '"':  subject += "\\\""; break;
-            					case '/':  subject += "\\/"; break;
-            					case '\b': subject += "\\b"; break;
-            					case '\f': subject += "\\f"; break;
-            					case '\n': subject += "\\n"; break;
-            					case '\r': subject += "\\r"; break;
-            					case '\t': subject += "\\t"; break;
-            					default: subject += c; break;						
-					}	
-				}
-				strJson += i->id.substr(0,12) + " " + subject + "\n";
+				string orig_line, line;
+				
+				 orig_line += "<https://github.com/qemu/qemu/commit/" + i->id.substr(0,40) + " | " + i->id.substr(0,12) + "> " + i->subject + "\n";
+				 //printf("%s /n", line.c_str());
+				//https://stackoverflow.com/questions/7724448/simple-json-string-escape-for-c/33799784#33799784
+				string_to_json(orig_line,line);
+				strJson += line;
 
 				if (opts->patch && i->path != "")
 					printf("%s  (Fixes %s)\n", prefix, i->path.c_str());
@@ -521,33 +498,11 @@ static void print_results(struct options *opts)
 		}
 	}
 	
-	strJson += "============================================\n";
+	strJson += "=================================================\n";
+	strJson += "Searched " + to_string(opts->count) + " objects, " + to_string(opts->match) + " matches \n";
 	strJson += "\"}";
-
-	//printf("%s", strJson.c_str());
-    	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strJson.size());
-    	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, strJson.c_str());
-    	res = curl_easy_perform(curl);
-	if (res != CURLE_OK)
-	{
-		switch(res)
-		{
-			case CURLE_UNSUPPORTED_PROTOCOL:
-				fprintf(stderr,"unsupported protocol\n");
-			case CURLE_COULDNT_CONNECT:
-				fprintf(stderr,"could not connect to remote host\n");
-			case CURLE_HTTP_RETURNED_ERROR:
-				fprintf(stderr,"http return error\n");
-			case CURLE_READ_ERROR:
-				fprintf(stderr,"curl read error\n");
-			default:
-				fprintf(stderr,"return:%d\n",res);
-		}
-		return;
-	}
-
-	curl_slist_free_all(headers);
-    	curl_easy_cleanup(curl);	
+	//printf("%s",strJson.c_str());
+	send_to_slack(strJson);
 
 	if (!found)
 		printf("Nothing found\n");
@@ -652,7 +607,7 @@ static void load_bl_keyword_file(string filename)
 	return;
 }
 
-static int load_commit_from_base(git_repository *repo, vector<struct match_info> &commits, struct options *opts){
+static int cve_commit_search(git_repository *repo, vector<struct match_info> &commits, struct options *opts){
 	git_revwalk *walker;
 	git_commit *commit;
 	git_oid oid;
@@ -661,8 +616,8 @@ static int load_commit_from_base(git_repository *repo, vector<struct match_info>
 
 	string revision = opts->base;
 	if (revision.size() == 0) {
-		printf("No Base given to load commit-list from.\n");
-		printf("Either use the -b option or set the fixes.file config variable in git.\n");
+		//printf("No Base given to load commit-list from.\n");
+		//printf("Either use the -b option or set the fixes.file config variable in git.\n");
 		return false;
 	}
 
@@ -884,7 +839,7 @@ static void remove_reverts(std::map<std::string, std::string> &reverts)
 	}
 }
 
-static int match_commit_search(git_repository *repo, struct options *opts)
+static int fix_commit_search(git_repository *repo, struct options *opts)
 {
 	git_diff_options diffopts = GIT_DIFF_OPTIONS_INIT;
 	int sorting = GIT_SORT_TIME;
@@ -895,7 +850,7 @@ static int match_commit_search(git_repository *repo, struct options *opts)
 	git_oid oid;
 	int err;
 
-	revision = fix_revision(opts->base, opts->revision);
+	revision = opts->base + ".." + opts->revision;
 	printf("revision is %s \n", revision.c_str());
 
 	err = revwalk_init(&walker, repo, revision.c_str());
@@ -936,6 +891,8 @@ static int match_commit_search(git_repository *repo, struct options *opts)
 		match += err;
 	}
 
+	opts->count = count;
+	opts->match = match;
 	// Remove reverted commits from the fixes list
 	remove_reverts(reverts);
 
@@ -944,9 +901,6 @@ static int match_commit_search(git_repository *repo, struct options *opts)
 	if (bl_pathspec)
 		git_pathspec_free(bl_pathspec);
 	git_revwalk_free(walker);
-
-	print_results(opts);
-	printf("Found %d objects (%d matches)\n", count, match);
 
 	return 0;
 
@@ -1133,6 +1087,8 @@ static bool parse_options(struct options *opts, int argc, char **argv)
 
 	if (optind < argc)
 		opts->revision = argv[optind++];
+	else
+		opts->revision = "HEAD";
 
 	for (;optind < argc; optind++)
 		opts->path.push_back(argv[optind]);
@@ -1241,15 +1197,17 @@ int main(int argc, char **argv)
 	bl_path_file(bl_path_fname, repo, &opts);
 	load_bl_path_file(bl_path_fname, &opts);
 
-      	if (load_commit_from_base(repo, match_list, &opts))
-		goto out;  
-
 	if (!load_commit_file(filename.c_str(), match_list))
 		goto out;
 
-	error = match_commit_search(repo, &opts);
+      	if (cve_commit_search(repo, match_list, &opts))
+		goto out;  
+
+	error = fix_commit_search(repo, &opts);
 	if (error < 0)
 		goto error;
+	
+	print_results(&opts);
 
 out:
 	git_repository_free(repo);

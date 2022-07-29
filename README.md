@@ -13,9 +13,9 @@ $make install
 It will be installed into $HOME/bin by default.
 
 ## Running
-uft --base --extra --blacklist --bl_keyword --bl-file --slack --email
+uft --base --extra --blacklist --bl_keyword --bl-file --slack --email []
 
---base: base branch or tag id, this is necessary
+--base: base..stable branch or tag id
 
 --extra: extra commits that have been backported
 
@@ -23,11 +23,9 @@ uft --base --extra --blacklist --bl_keyword --bl-file --slack --email
 
 --bl-keyword: blacklist the commits that contain the keywords
 
---bl-file: blacklist the commits that in the src files
+--only-file: search the commits from the src files
 
 --slack: send to slack channel
-
---email:  send to emails
 
 ## DEMO
 
