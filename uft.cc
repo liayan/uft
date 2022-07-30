@@ -397,9 +397,8 @@ static int send_to_slack(const string &strJson){
     	CURLcode res;
     	curl = curl_easy_init();
 
-    	//string result;
+
     	struct curl_slist *headers = NULL;
-	//headers = curl_slist_append(headers, "Expect:");
 	headers = curl_slist_append(headers, CONTENT_TYPE);
     	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	//curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
@@ -461,6 +460,15 @@ static void print_results(struct options *opts)
 	const char *prefix;
 	bool found = false;
 
+	string url = opts->repo_origin_url;
+	if(url.find("git@gitlab.com:") != string::npos ){
+		url = url.replace(url.find("git@gitlab.com:"),15,"https://gitlab.com/");
+	} else if(url.find("git@github.com:") != string::npos ){
+		url = url.replace(url.find("git@github.com:"),15,"https://github.com/");
+	}
+	url = url.replace(url.find(".git"),4,"/commit/");
+	//printf("%s", url.c_str());
+
 	vector<string> strJason_arrary;
 	string strJson = "{\"text\":\"";
 	strJson += "=================================================\n";
@@ -487,9 +495,8 @@ static void print_results(struct options *opts)
 						i->subject.c_str());
 
 				string orig_line, line;
-				
-				 orig_line += "<https://github.com/libvirt/libvirt/commit/" + i->id.substr(0,40) + " | " + i->id.substr(0,12) + "> " + i->subject + "\n";
-				 //printf("%s /n", line.c_str());
+
+				orig_line += "<"+ url + i->id.substr(0,40) + " | " + i->id.substr(0,12) + "> " + i->subject + "\n";
 				string_to_json(orig_line,line);
 				if((strJson.size()+line.size()) > 16000){
 					strJson += "\"}";
@@ -992,6 +999,9 @@ static int load_defaults_from_git(git_repository *repo, struct options *opts)
 
 	if (opts->committer == "")
 		opts->committer = config_get_string_nofail(repo_cfg, "user.email");
+
+	if (opts->repo_origin_url == "")
+		opts->repo_origin_url = config_get_string_nofail(repo_cfg, "remote.origin.url");
 
 	if (opts->fixes_file == "")
 		opts->fixes_file = config_get_path_nofail(repo_cfg, "fixes.file");
