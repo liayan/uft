@@ -469,10 +469,17 @@ static void print_results(struct options *opts)
 	url = url.replace(url.find(".git"),4,"/commit/");
 	//printf("%s", url.c_str());
 
+	time_t ltime;
+	time(&ltime);
+	string str_begin = "Upstream fixes tracking: " + string(ctime(&ltime))  + "\n";
+	str_begin += "Git Repo: " + opts->repo_origin_url + "\n";
+	str_begin += "Git-fixes-commit between " + opts->base + " and " + opts->revision +"\n";
+	str_begin += "=================================================\n";
+	printf("%s",str_begin.c_str());
+
 	vector<string> strJason_arrary;
 	string strJson = "{\"text\":\"";
-	strJson += "=================================================\n";
-	strJson += "Git commits between " + opts->base + " and " + opts->revision +"\n";
+	strJson += str_begin;
 
 	prefix = opts->no_group ? "" : "\t";
 	for (r = results.begin(); r != results.end(); ++r) {
@@ -513,15 +520,18 @@ static void print_results(struct options *opts)
 		}
 	}
 	
-	strJson += "=================================================\n";
-	strJson += "Searched " + to_string(opts->count) + " objects, " + to_string(opts->match) + " matches \n";
+	string str_end = "=================================================\n";
+	str_end += "Searched " + to_string(opts->count) + " objects, " + to_string(opts->match) + " matches \n";
+	strJson += str_end;
 	strJson += "\"}";
 	//printf("%s, %ld",strJson.c_str(), strJson.size());
 	strJason_arrary.push_back(strJson);
 	for(string str : strJason_arrary){
-		//printf("%s, %ld \n",str.c_str(), str.size());
 		send_to_slack(str);
 	}
+
+	printf("%s", str_end.c_str());
+
 	if (!found)
 		printf("Nothing found\n");
 }
@@ -869,7 +879,7 @@ static int fix_commit_search(git_repository *repo, struct options *opts)
 	int err;
 
 	revision = opts->base + ".." + opts->revision;
-	printf("revision is %s \n", revision.c_str());
+	//printf("revision is %s \n", revision.c_str());
 
 	err = revwalk_init(&walker, repo, revision.c_str());
 	if (err < 0) {
