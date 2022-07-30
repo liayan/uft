@@ -390,7 +390,7 @@ size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp){
     return result;
 }
 
-static int send_to_slack(string &strJson){
+static int send_to_slack(const string &strJson){
 	
 	//CURL operation
     	CURL *curl;
@@ -399,9 +399,10 @@ static int send_to_slack(string &strJson){
 
     	//string result;
     	struct curl_slist *headers = NULL;
+	//headers = curl_slist_append(headers, "Expect:");
 	headers = curl_slist_append(headers, CONTENT_TYPE);
     	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 4000);
+	//curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
     	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
     	curl_easy_setopt(curl, CURLOPT_URL, INCOMING_WEBHOOKS);
   
@@ -433,6 +434,8 @@ static int send_to_slack(string &strJson){
 	return 0;
 }
 
+//Reference: 
+//https://stackoverflow.com/questions/7724448/simple-json-string-escape-for-c/33799784#33799784
 void string_to_json(const string &orig_line, string &line){
 	for(char c : orig_line){
 		switch (c)
@@ -458,6 +461,7 @@ static void print_results(struct options *opts)
 	const char *prefix;
 	bool found = false;
 
+	vector<string> strJason_arrary;
 	string strJson = "{\"text\":\"";
 	strJson += "=================================================\n";
 	strJson += "Git commits between " + opts->base + " and " + opts->revision +"\n";
@@ -484,10 +488,14 @@ static void print_results(struct options *opts)
 
 				string orig_line, line;
 				
-				 orig_line += "<https://github.com/qemu/qemu/commit/" + i->id.substr(0,40) + " | " + i->id.substr(0,12) + "> " + i->subject + "\n";
+				 orig_line += "<https://github.com/libvirt/libvirt/commit/" + i->id.substr(0,40) + " | " + i->id.substr(0,12) + "> " + i->subject + "\n";
 				 //printf("%s /n", line.c_str());
-				//https://stackoverflow.com/questions/7724448/simple-json-string-escape-for-c/33799784#33799784
 				string_to_json(orig_line,line);
+				if((strJson.size()+line.size()) > 16000){
+					strJson += "\"}";
+					strJason_arrary.push_back(strJson);
+					strJson = "{\"text\":\"";
+				}
 				strJson += line;
 
 				if (opts->patch && i->path != "")
@@ -501,9 +509,12 @@ static void print_results(struct options *opts)
 	strJson += "=================================================\n";
 	strJson += "Searched " + to_string(opts->count) + " objects, " + to_string(opts->match) + " matches \n";
 	strJson += "\"}";
-	//printf("%s",strJson.c_str());
-	send_to_slack(strJson);
-
+	//printf("%s, %ld",strJson.c_str(), strJson.size());
+	strJason_arrary.push_back(strJson);
+	for(string str : strJason_arrary){
+		//printf("%s, %ld \n",str.c_str(), str.size());
+		send_to_slack(str);
+	}
 	if (!found)
 		printf("Nothing found\n");
 }
